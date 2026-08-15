@@ -1,0 +1,15 @@
+[project]
+name = "xek-grid"
+version = "0.1.0"
+description = "An end-to-end AI application mesh offering guarded RAG orchestration, multi-tenant data management, and continuous operational evaluation."
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "openai>=3.1.0",
+    "pydantic-settings>=2.15.0",
+    "python-json-logger>=4.1.0",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.52.3",
+]
