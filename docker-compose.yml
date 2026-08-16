@@ -1,0 +1,25 @@
+services:
+  rag_service:
+    build:
+      context: .
+      dockerfile: dockers/Dockerfile.rag
+      ## Uncomment when the Docker build cannot resolve external domains
+      ## (for example, DNS failures while downloading Python packages).
+      ## This makes the build use the host's network stack.
+      network: host
+    container_name: genai_rag
+    ## Uncomment when the application needs to use the host's network
+    ## directly instead of Docker's isolated container network.
+    ## With host networking, the container shares the host's network
+    ## interfaces and ports, so Docker port mapping is not required.
+    network_mode: host
+    environment:
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./src/common:/genai/src/common:ro
+      - ./src/rag_service:/genai/src/rag_service:ro
+      - ./prompts:/genai/prompts:ro
+    command: ["uv", "run", "uvicorn", "src.rag_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    restart: unless-stopped
+

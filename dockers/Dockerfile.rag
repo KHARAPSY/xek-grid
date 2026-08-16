@@ -1,0 +1,12 @@
+FROM python:3.14-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin
+
+WORKDIR /genai
+
+COPY . .
+
+RUN uv sync --frozen --no-dev
+
+CMD ["uv", "run", "uvicorn", "src.rag_service.main:app"]
+
