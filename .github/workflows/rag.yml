@@ -35,10 +35,10 @@ jobs:
         id: image
         shell: bash
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
 
-          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
-          echo "Docker image name: $IMAGE"
+          echo "name=$IMAGE:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "Docker image name: $IMAGE:sha-$GITHUB_SHA"
 
       # 3. Set up Buildx (Docker's modern build engine required for cache & multi-platform)
       - name: Set up Docker Buildx
@@ -57,9 +57,10 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.image.outputs.name }}
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,prefix=sha-
+            type=raw,value=latest
 
       # 6. Build and push the image using GitHub Actions native caching
       - name: Build and push Docker image
