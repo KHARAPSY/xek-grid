@@ -73,7 +73,7 @@ jobs:
     steps:
       # 6. Deploy the new image to the remote server
       - name: Deploy to remote server
-        uses: appleboy/ssh-action@1.2.2
+        uses: appleboy/ssh-action@1.2.5
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
