@@ -70,8 +70,8 @@ jobs:
           file: ./dockers/Dockerfile.rag
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}:sha-${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}:latest
+            ghcr.io/${GITHUB_REPOSITORY,,}:sha-${{ github.sha }}
+            ghcr.io/${GITHUB_REPOSITORY,,}:latest
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
