@@ -35,7 +35,7 @@ jobs:
         id: image
         shell: bash
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
 
           echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Docker image name: $IMAGE"
