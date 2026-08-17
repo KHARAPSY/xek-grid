@@ -1,9 +1,13 @@
-name: Build RAG Service
+name: Build and Deploy RAG Service
 
 on:
   push:
     branches: [ "main" ]
     #tags: [ "v*.*.*" ]
+
+concurrency:
+  group: rag-service-production
+  cancel-in-progress: false
 
 jobs:
   build-image:
@@ -41,6 +45,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest
 
       # 5. Build and push the image using GitHub Actions native caching
       - name: Build and push Docker image
@@ -53,4 +60,218 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-image:
+    needs: build-image
+    runs-on:
+      - self-hosted
+      - ${{ vars.RUNNER_LABEL }}
+
+    permissions:
+      contents: read
+
+    steps:
+      # 6. Deploy the new image to the remote server
+      - name: Deploy to remote server
+        uses: appleboy/ssh-action@1.2.2
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          host: ${{ vars.REMOTE_HOST }}
+          username: ${{ vars.REMOTE_USER }}
+          key: ${{ secrets.REMOTE_SSH_KEY }}
+          port: ${{ secrets.REMOTE_PORT }}
+          envs: GHCR_USERNAME,GHCR_TOKEN,IMAGE,OPENAI_BASE_URL,OPENAI_API_KEY
+          script: |
+            set -euo pipefail
+
+            # 6.1. Define container names and ports
+            NEW_CONTAINER="rag-service-new"
+            CURRENT_CONTAINER="rag-service"
+            OLD_CONTAINER="rag-service-old"
+
+            HEALTH_PORT="18000"
+            SERVICE_PORT="8000"
+
+            echo "Deploying $IMAGE"
+
+            # 6.2. Authenticate the remote server with GithHub Container Registry
+            echo "$GHCR_TOKEN" | docker login ghcr.io \
+              -u "$GHCR_USERNAME" \
+              --password-stdin
+
+            # 6.3. Download image from GHCR
+            docker pull "$IMAGE"
+
+            # 6.4. Clean up any leftover temporary conatiner
+            docker rm -f "$NEW_CONTAINER" 2>/dev/null || true
+            docker rm -f "$OLD_CONTAINER" 2>/dev/null || true
+
+            # 6.5. Start the new version on a temporary port
+            docker run -d \
+              --name "$NEW_CONTAINER" \
+              -e OPENAI_BASE_URL="$OPENAI_BASE_URL" \
+              -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+              -p "${HEALTH_PORT}:8000" \
+              "$IMAGE" \
+              uv run uvicorn src.rag_service.main:app \
+              --host 0.0.0.0 \
+              --port 8000
+
+            echo "Waiting for new container to become healthy..."
+
+            # 6.6. Wait for the new application to become healthy
+            HEALTHY=false
+
+            for i in $(seq 1 30); do
+              if curl --fail --silent --show-error --max-time 5 \
+                "http://127.0.0.1:${HEALTH_PORT}/health" \
+                >/dev/null 2>&1; then
+
+                HEALTHY=true
+                echo "New container is healthy."
+                break
+              fi
+
+              STATUS=$(docker inspect -f '{{.State.Status}}' "$NEW_CONTAINER" 2>/dev/null || echo "not found")
+              echo "Health check attempt ${i}/30 - container status: ${STATUS}"
+
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$STATUS" = "not found" ]; then
+                echo "New container stopped unexpectedly. Aborting deployment."
+
+                docker logs "$NEW_CONTAINER" || true
+                docker rm  -f "$NEW_CONTAINER" || true
+
+                exit 1
+              fi
+
+              sleep 2
+            done
+
+            # 6.7. If the new version is not healthy, abort
+            if [ "$HEALTHY" != "true" ]; then
+              echo "New version failed health check. Aborting deployment."
+
+              docker logs --tail 100 "$NEW_CONTAINER" || true
+              docker rm -f "$NEW_CONTAINER" || true
+
+              exit 1
+            fi
+
+            # 6.8. Preserve the current running container for rollback
+            CURRENT_EXISTS=false
+
+            if docker inspect "$CURRENT_CONTAINER" >/dev/null 2>&1; then
+              CURRENT_EXISTS=true
+
+              echo "Stopping current container..."
+              docker stop "$CURRENT_CONTAINER"
+
+              echo "Renaming current container to $OLD_CONTAINER for rollback..."
+              docker rename "$CURRENT_CONTAINER" "$OLD_CONTAINER"
+            fi
+
+            # 6.9. Remove temporary container
+            docker stop "$NEW_CONTAINER"
+            docker rm "$NEW_CONTAINER"
+
+            # 6.10. Start the new version on the poduction port
+            echo "Starting new version on port ${SERVICE_PORT}..."
+
+            docker run -d \
+              --name "$CURRENT_CONTAINER" \
+              -e OPENAI_BASE_URL="$OPENAI_BASE_URL" \
+              -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+              --restart unless-stopped \
+              -p "${SERVICE_PORT}:8000" \
+              "$IMAGE" \
+              uv run uvicorn src.rag_service.main:app \
+              --host 0.0.0.0 --port 8000
+
+            echo "Waiting for production container to become healthy..."
+
+            # 6.11. Verify the production deployment
+            HEALTHY=false
+
+            for i in $(seq 1 30); do
+              if curl --fail --silent --show-erorr --max-time 5 \
+                "http://127.0.0.1:${SERVICE_PORT}/health" \
+                >/dev/null 2>&1; then
+
+                HEALTHY=true
+                echo "Production container is healthy."
+                break
+              fi
+
+              STATUS=$(docker inspect -f '{{.State.Status}}' "$CURRENT_CONTAINER" 2>/dev/null || echo "not found")
+
+              echo "Production health check attempt ${i}/30 - container status: ${STATUS}"
+
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$STATUS" = "not found"]; then
+                echo "Production container stopped unexpectedly. Aborting deployment."
+                break
+              fi
+
+              sleep 2
+            done
+
+            # 6.12. Roll back if production deployment is not healthy
+            if [ "$HEALTHY" != "true" ]; then
+              echo "Deployment failed. Rolling back to previous version..."
+
+              docker logs --tail 100 "$CURRENT_CONTAINER" || true
+              docker rm -f "$CURRENT_CONTAINER" || true
+
+              if [ "$CURRENT_EXISTS" = "true" ] && docker inspect "$OLD_CONTAINER" >/dev/null 2>&1; then
+                echo "Rolling back to previous version..."
+
+                docker rename "$OLD_CONTAINER" "$CURRENT_CONTAINER"
+                docker start "$CURRENT_CONTAINER"
+
+                ROLLBACK_HEALTHY=false
+
+                for i in $(seq 1 15) ; do
+                  if curl --fail --silent --show-error --max-time 5 \
+                    "http://127.0.0.1:${SERVICE_PORT}/health" \
+                    >/dev/null 2>&1; then
+
+                    ROLLBACK_HEALTHY=true
+                    echo "Rollback successful. Previous version is healthy."
+                    break
+                  fi
+
+                  echo "Rollback health check attempt ${i}/15..."
+                  sleep 2
+                done
+
+                if [ "$ROLLBACK_HEALTHY" != "true" ]; then
+                  echo "Rollback failed. Manual intervention required."
+
+                  docker logs --tail 100 "$CURRENT_CONTAINER" || true
+                else
+                  echo "Rollback successful. Previous version is healthy."
+                fi
+              else
+                echo "No previous version to roll back to. Manual intervention required."
+              fi
+
+              exit 1
+            fi
+
+            # 6.13. Deployment succeeded
+            echo "Deployment succeeded. Image: $IMAGE"
+
+            docker logs --tail 50 "$CURRENT_CONTAINER"
+
+            # 6.14. Remove old container only after successful deployment
+            if [ "$CURRENT_EXISTS" = "true" ]; then
+              docker rm "$OLD_CONTAINER" || true
+            fi
+
+            # 6.15 . Clean up dangling images
+            docker image prune -f
 
