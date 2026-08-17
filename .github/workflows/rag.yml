@@ -60,7 +60,6 @@ jobs:
           images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,prefix=sha-
-            type=raw,value=latest
 
       # 6. Build and push the image using GitHub Actions native caching
       - name: Build and push Docker image
