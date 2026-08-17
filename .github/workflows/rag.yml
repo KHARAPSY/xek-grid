@@ -35,10 +35,10 @@ jobs:
         id: image
         shell: bash
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA}"
 
-          echo "name=$IMAGE:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "Docker image name: $IMAGE:sha-$GITHUB_SHA"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Docker image name: $IMAGE"
 
       # 3. Set up Buildx (Docker's modern build engine required for cache & multi-platform)
       - name: Set up Docker Buildx
@@ -57,7 +57,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.image.outputs.repository }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -90,7 +90,7 @@ jobs:
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ${{ needs.build-image.outputs.image }}
+          IMAGE: ${{ needs.build-image.outputs.image }}:sha-${{ github.sha }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
