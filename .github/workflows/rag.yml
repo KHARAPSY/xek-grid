@@ -19,6 +19,9 @@ jobs:
       contents: read
       packages: write
 
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+
     steps:
       # 1. Download repository source code
       - name: Checkout repository
@@ -26,6 +29,14 @@ jobs:
 
       # TODO: Add test and lint steps before building/pushing the image.
       # This workflow currently only builds and publishes the Docker image to GHCR.
+
+      # 2. Set up Docker image name
+      - name: Set up Docker image name
+        id: image
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "name=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Docker image name: $IMAGE"
 
       # 2. Set up Buildx (Docker's modern build engine required for cache & multi-platform)
       - name: Set up Docker Buildx
@@ -44,7 +55,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -77,12 +88,12 @@ jobs:
         env:
           GHCR_USERNAME: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ghcr.io/${{ github.repository }}:sha-${{ github.sha }}
+          IMAGE: ${{ needs.build-image.outputs.image }}:sha-${{ github.sha }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
-          host: ${{ vars.REMOTE_HOST }}
-          username: ${{ vars.REMOTE_USER }}
+          host: ${{ secrets.REMOTE_HOST }}
+          username: ${{ secrets.REMOTE_USER }}
           password: ${{ secrets.REMOTE_SSH_KEY }}
           port: ${{ secrets.REMOTE_PORT }}
           envs: GHCR_USERNAME,GHCR_TOKEN,IMAGE,OPENAI_BASE_URL,OPENAI_API_KEY
