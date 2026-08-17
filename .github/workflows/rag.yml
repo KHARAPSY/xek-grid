@@ -57,7 +57,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ steps.image.outputs.repository }}
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest
@@ -69,9 +69,7 @@ jobs:
           context: .
           file: ./dockers/Dockerfile.rag
           push: true
-          tags: |
-            ghcr.io/${GITHUB_REPOSITORY,,}:sha-${{ github.sha }}
-            ghcr.io/${GITHUB_REPOSITORY,,}:latest
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
