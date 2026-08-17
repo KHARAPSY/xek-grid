@@ -59,7 +59,7 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=sha,prefix=sha-
+            type=sha,prefix=sha-,format=long
             type=raw,value=latest
 
       # 6. Build and push the image using GitHub Actions native caching
@@ -82,6 +82,7 @@ jobs:
 
     permissions:
       contents: read
+      packages: read
 
     steps:
       # 6. Deploy the new image to the remote server
