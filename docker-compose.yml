@@ -22,4 +22,10 @@ services:
       - ./prompts:/genai/prompts:ro
     command: ["uv", "run", "uvicorn", "src.rag_service.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     restart: unless-stopped
+    healthcheck:
+      interval: 300s
+      timeout: 10s
+      retires: 3
+      start_period: 30s
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/rag/health"]
 
