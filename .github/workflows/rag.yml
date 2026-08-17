@@ -225,7 +225,7 @@ jobs:
 
               echo "Production health check attempt ${i}/30 - container status: ${STATUS}"
 
-              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$STATUS" = "not found"]; then
+              if [ "$STATUS" = "exited" ] || [ "$STATUS" = "dead" ] || [ "$STATUS" = "not found" ]; then
                 echo "Production container stopped unexpectedly. Aborting deployment."
                 break
               fi
